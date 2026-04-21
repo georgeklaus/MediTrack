@@ -51,4 +51,29 @@ class AuthService {
     if (!doc.exists) return null;
     return UserModel.fromDoc(doc);
   }
+
+  Future<void> updateName(String name) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await user.updateDisplayName(name.trim());
+    await _db.collection('users').doc(user.uid).update({'name': name.trim()});
+  }
+
+  Future<void> sendPasswordResetEmail() async {
+    final email = _auth.currentUser?.email;
+    if (email == null) return;
+    await _auth.sendPasswordResetEmail(email: email);
+  }
+
+  Future<void> deleteAccount(String password) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final credential = EmailAuthProvider.credential(
+      email: user.email!,
+      password: password,
+    );
+    await user.reauthenticateWithCredential(credential);
+    await _db.collection('users').doc(user.uid).delete();
+    await user.delete();
+  }
 }

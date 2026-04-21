@@ -3,6 +3,11 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
+import 'account_information_screen.dart';
+import 'notifications_screen.dart';
+import 'privacy_security_screen.dart';
+import 'help_support_screen.dart';
+import 'about_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -78,14 +83,23 @@ class ProfileScreen extends StatelessWidget {
                         icon: Icons.person_outline,
                         title: 'Account Information',
                         subtitle: user?.email ?? '',
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const AccountInformationScreen()),
+                        ),
                       ),
                       _SettingsDivider(),
                       _SettingsTile(
                         icon: Icons.notifications_outlined,
                         title: 'Notifications',
                         subtitle: 'Medication & appointment reminders',
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const NotificationsScreen()),
+                        ),
                       ),
                     ]),
                     const SizedBox(height: 16),
@@ -93,20 +107,33 @@ class ProfileScreen extends StatelessWidget {
                       _SettingsTile(
                         icon: Icons.security_outlined,
                         title: 'Privacy & Security',
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const PrivacySecurityScreen()),
+                        ),
                       ),
                       _SettingsDivider(),
                       _SettingsTile(
                         icon: Icons.help_outline,
                         title: 'Help & Support',
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const HelpSupportScreen()),
+                        ),
                       ),
                       _SettingsDivider(),
                       _SettingsTile(
                         icon: Icons.info_outline,
                         title: 'About MediTrack',
                         subtitle: 'Version 1.0.0',
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AboutScreen()),
+                        ),
                       ),
                     ]),
                     const SizedBox(height: 16),

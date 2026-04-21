@@ -35,14 +35,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
     final name = _nameCtrl.text.trim();
     setState(() { _loading = true; _error = null; });
+    final authService = context.read<AuthService>();
     try {
-      await context.read<AuthService>().register(
+      await authService.register(
         name: name,
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text,
       );
       // Sign out immediately so user must log in explicitly
-      await context.read<AuthService>().logout();
+      await authService.logout();
       if (!mounted) return;
       await showDialog(
         context: context,
