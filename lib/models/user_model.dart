@@ -1,14 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+enum UserRole { patient, provider }
+
 class UserModel {
   final String id;
   final String name;
   final String email;
+  final UserRole role;
 
   UserModel({
     required this.id,
     required this.name,
     required this.email,
+    this.role = UserRole.patient,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map, String id) {
@@ -16,6 +20,7 @@ class UserModel {
       id: id,
       name: map['name'] ?? '',
       email: map['email'] ?? '',
+      role: map['role'] == 'provider' ? UserRole.provider : UserRole.patient,
     );
   }
 
@@ -26,5 +31,6 @@ class UserModel {
   Map<String, dynamic> toMap() => {
         'name': name,
         'email': email,
+        'role': role == UserRole.provider ? 'provider' : 'patient',
       };
 }

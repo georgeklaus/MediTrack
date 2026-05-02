@@ -24,6 +24,7 @@ class MedicationsScreen extends StatelessWidget {
         backgroundColor: AppColors.background,
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'medications_fab',
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(

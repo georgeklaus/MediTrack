@@ -15,6 +15,10 @@ class AuthService {
     required String name,
     required String email,
     required String password,
+    String role = 'patient',
+    String? phone,
+    String? specialization,
+    String? facility,
   }) async {
     final cred = await _auth.createUserWithEmailAndPassword(
       email: email.trim(),
@@ -23,10 +27,15 @@ class AuthService {
     // Set display name on the Firebase user
     await cred.user!.updateDisplayName(name.trim());
     // Save profile to Firestore
-    await _db.collection('users').doc(cred.user!.uid).set({
+    final data = <String, dynamic>{
       'name': name.trim(),
       'email': email.trim(),
-    });
+      'role': role,
+    };
+    if (phone != null && phone.isNotEmpty) data['phone'] = phone.trim();
+    if (specialization != null && specialization.isNotEmpty) data['specialization'] = specialization.trim();
+    if (facility != null && facility.isNotEmpty) data['facility'] = facility.trim();
+    await _db.collection('users').doc(cred.user!.uid).set(data);
     return cred;
   }
 
@@ -50,6 +59,15 @@ class AuthService {
     final doc = await _db.collection('users').doc(uid).get();
     if (!doc.exists) return null;
     return UserModel.fromDoc(doc);
+  }
+
+  Future<String> getUserRole() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return 'patient';
+    final doc = await _db.collection('users').doc(uid).get();
+    if (!doc.exists) return 'patient';
+    final data = doc.data() as Map<String, dynamic>;
+    return data['role'] as String? ?? 'patient';
   }
 
   Future<void> updateName(String name) async {

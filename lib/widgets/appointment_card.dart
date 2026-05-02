@@ -1,26 +1,46 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
+import '../theme/app_theme.dart';
 import 'package:intl/intl.dart';
 
 class AppointmentCard extends StatelessWidget {
   final String doctorName;
   final DateTime date;
   final String? notes;
+  final String status;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onCancel;
 
   const AppointmentCard({
     super.key,
     required this.doctorName,
     required this.date,
     this.notes,
+    this.status = 'pending',
     this.onTap,
     this.onDelete,
+    this.onCancel,
   });
 
   @override
   Widget build(BuildContext context) {
     final isPast = date.isBefore(DateTime.now());
+
+    Color statusColor;
+    switch (status) {
+      case 'confirmed':
+        statusColor = AppColors.success;
+        break;
+      case 'completed':
+        statusColor = AppColors.info;
+        break;
+      case 'cancelled':
+        statusColor = AppColors.danger;
+        break;
+      default:
+        statusColor = AppColors.warning;
+    }
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -107,18 +127,51 @@ class AppointmentCard extends StatelessWidget {
                           fontSize: 12, color: AppColors.textSecondary),
                     ),
                   ],
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      status[0].toUpperCase() + status.substring(1),
+                      style: TextStyle(
+                          color: statusColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ],
               ),
             ),
-            if (onDelete != null)
-              GestureDetector(
-                onTap: onDelete,
-                child: const Icon(Icons.delete_outline,
-                    color: AppColors.danger, size: 20),
-              ),
+            Column(
+              children: [
+                if (onDelete != null)
+                  GestureDetector(
+                    onTap: onDelete,
+                    child: const Icon(Icons.delete_outline,
+                        color: AppColors.danger, size: 20),
+                  ),
+                if (onCancel != null && (status == 'pending' || status == 'confirmed')) ...[
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: onCancel,
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                          color: AppColors.danger,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 }
+

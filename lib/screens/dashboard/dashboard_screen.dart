@@ -15,6 +15,7 @@ class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
   @override
+
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final user = auth.currentUser;
@@ -132,7 +133,9 @@ class DashboardScreen extends StatelessWidget {
                     builder: (ctx, apptSnap) {
                       final meds = medSnap.data?.length ?? 0;
                       final upcoming = apptSnap.data
-                              ?.where((a) => a.date.isAfter(now))
+                              ?.where((a) =>
+                                  a.dateTime.isAfter(now) &&
+                                  a.status != 'cancelled')
                               .length ??
                           0;
                       return Row(
@@ -230,7 +233,9 @@ class DashboardScreen extends StatelessWidget {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final appts = (snap.data ?? [])
-                      .where((a) => a.date.isAfter(now))
+                      .where((a) =>
+                          a.dateTime.isAfter(now) &&
+                          a.status != 'cancelled')
                       .take(3)
                       .toList();
                   if (appts.isEmpty) {
@@ -373,6 +378,19 @@ class _ApptTile extends StatelessWidget {
   final AppointmentModel appt;
   const _ApptTile({required this.appt});
 
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'confirmed':
+        return AppColors.success;
+      case 'completed':
+        return AppColors.info;
+      case 'cancelled':
+        return AppColors.danger;
+      default:
+        return AppColors.warning;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -405,12 +423,16 @@ class _ApptTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(appt.doctorName,
+                Text(
+                    appt.providerName.isNotEmpty
+                        ? 'Dr. ${appt.providerName}'
+                        : 'Doctor',
                     style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                         color: AppColors.textPrimary)),
-                Text(DateFormat('EEE, MMM d • h:mm a').format(appt.date),
+                Text(
+                    DateFormat('EEE, MMM d • h:mm a').format(appt.dateTime),
                     style: const TextStyle(
                         fontSize: 12, color: AppColors.textSecondary)),
               ],
@@ -419,14 +441,16 @@ class _ApptTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.success.withValues(alpha: 0.12),
+              color: _statusColor(appt.status).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text('Upcoming',
-                style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.success)),
+            child: Text(
+              appt.status[0].toUpperCase() + appt.status.substring(1),
+              style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: _statusColor(appt.status)),
+            ),
           ),
         ],
       ),

@@ -7,9 +7,11 @@ import 'services/auth_service.dart';
 import 'services/medication_service.dart';
 import 'services/appointment_service.dart';
 import 'services/record_service.dart';
+import 'services/provider_service.dart';
 import 'theme/app_theme.dart';
-import 'screens/auth/login_screen.dart';
+import 'screens/role_selection_screen.dart';
 import 'widgets/app_shell.dart';
+import 'screens/provider/provider_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +30,7 @@ class MediTrackApp extends StatelessWidget {
         Provider<MedicationService>(create: (_) => MedicationService()),
         Provider<AppointmentService>(create: (_) => AppointmentService()),
         Provider<RecordService>(create: (_) => RecordService()),
+        Provider<ProviderService>(create: (_) => ProviderService()),
       ],
       child: MaterialApp(
         title: 'MediTrack',
@@ -39,7 +42,7 @@ class MediTrackApp extends StatelessWidget {
   }
 }
 
-/// Listens to FirebaseAuth state and routes to login or the main shell.
+/// Listens to FirebaseAuth state and routes based on role or shows role selection.
 class _AuthGate extends StatelessWidget {
   const _AuthGate();
 
@@ -55,9 +58,25 @@ class _AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData && snapshot.data != null) {
-          return const AppShell();
+          // User is logged in — determine role and route accordingly
+          return FutureBuilder<String>(
+            future: authService.getUserRole(),
+            builder: (context, roleSnap) {
+              if (roleSnap.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final role = roleSnap.data ?? 'patient';
+              if (role == 'provider') {
+                return const ProviderShell();
+              }
+              return const AppShell();
+            },
+          );
         }
-        return const LoginScreen();
+        // Not logged in — show role selection
+        return const RoleSelectionScreen();
       },
     );
   }

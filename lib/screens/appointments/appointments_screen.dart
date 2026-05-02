@@ -5,7 +5,7 @@ import '../../services/appointment_service.dart';
 import '../../models/appointment_model.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/appointment_card.dart';
-import 'book_appointment_screen.dart';
+import 'find_doctor_screen.dart';
 
 class AppointmentsScreen extends StatelessWidget {
   const AppointmentsScreen({super.key});
@@ -18,7 +18,7 @@ class AppointmentsScreen extends StatelessWidget {
     final now = DateTime.now();
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
@@ -32,95 +32,77 @@ class AppointmentsScreen extends StatelessWidget {
             tabs: const [
               Tab(text: 'Upcoming'),
               Tab(text: 'Past'),
+              Tab(text: 'Find Doctor'),
             ],
           ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => const BookAppointmentScreen()),
-          ),
-          backgroundColor: AppColors.primary,
-          child: const Icon(Icons.add, color: Colors.white),
         ),
         body: uid == null
             ? const Center(child: Text('Not logged in'))
-            : StreamBuilder<List<AppointmentModel>>(
-                stream: apptService.getAppointments(uid),
-                builder: (ctx, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final all = snap.data ?? [];
-                  final upcoming = all
-                      .where((a) => a.date.isAfter(now))
-                      .toList()
-                    ..sort((a, b) => a.date.compareTo(b.date));
-                  final past = all
-                      .where((a) => !a.date.isAfter(now))
-                      .toList()
-                    ..sort((a, b) => b.date.compareTo(a.date));
-
-                  return TabBarView(
-                    children: [
-                      _AppointmentList(
+            : TabBarView(
+                children: [
+                  // ── Upcoming ──────────────────────────────────────────────
+                  StreamBuilder<List<AppointmentModel>>(
+                    stream: apptService.getAppointments(uid),
+                    builder: (ctx, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final upcoming = (snap.data ?? [])
+                          .where((a) =>
+                              a.dateTime.isAfter(now) &&
+                              a.status != 'cancelled')
+                          .toList()
+                        ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+                      return _AppointmentList(
                         items: upcoming,
-                        emptyMessage: 'No upcoming appointments',
-                        onDelete: (id) async {
-                          final confirmed = await _confirmDelete(ctx);
-                          if (confirmed) await apptService.deleteAppointment(id);
-                        },
-                      ),
-                      _AppointmentList(
+                        emptyMessage: 'No upcoming appointments.\nTap "Find Doctor" to book one.',
+                        apptService: apptService,
+                      );
+                    },
+                  ),
+                  // ── Past ──────────────────────────────────────────────────
+                  StreamBuilder<List<AppointmentModel>>(
+                    stream: apptService.getAppointments(uid),
+                    builder: (ctx, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final past = (snap.data ?? [])
+                          .where((a) =>
+                              !a.dateTime.isAfter(now) ||
+                              a.status == 'cancelled' ||
+                              a.status == 'completed')
+                          .toList()
+                        ..sort((a, b) => b.dateTime.compareTo(a.dateTime));
+                      return _AppointmentList(
                         items: past,
-                        emptyMessage: 'No past appointments',
-                        onDelete: (id) async {
-                          final confirmed = await _confirmDelete(ctx);
-                          if (confirmed) await apptService.deleteAppointment(id);
-                        },
-                      ),
-                    ],
-                  );
-                },
+                        emptyMessage: 'No past appointments.',
+                        apptService: apptService,
+                        isPast: true,
+                      );
+                    },
+                  ),
+                  // ── Find Doctor ───────────────────────────────────────────
+                  const FindDoctorScreen(),
+                ],
               ),
       ),
     );
-  }
-
-  Future<bool> _confirmDelete(BuildContext ctx) async {
-    return await showDialog<bool>(
-          context: ctx,
-          builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
-            title: const Text('Delete Appointment'),
-            content: const Text('Remove this appointment?'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel')),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Delete',
-                    style: TextStyle(color: AppColors.danger)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
   }
 }
 
 class _AppointmentList extends StatelessWidget {
   final List<AppointmentModel> items;
   final String emptyMessage;
-  final Future<void> Function(String id) onDelete;
+  final AppointmentService apptService;
+  final bool isPast;
 
-  const _AppointmentList(
-      {required this.items,
-      required this.emptyMessage,
-      required this.onDelete});
+  const _AppointmentList({
+    required this.items,
+    required this.emptyMessage,
+    required this.apptService,
+    this.isPast = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +123,7 @@ class _AppointmentList extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(emptyMessage,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 15, color: AppColors.textSecondary)),
           ],
@@ -153,12 +136,45 @@ class _AppointmentList extends StatelessWidget {
       itemBuilder: (_, i) {
         final a = items[i];
         return AppointmentCard(
-          doctorName: a.doctorName,
-          date: a.date,
-          notes: a.notes,
-          onDelete: () => onDelete(a.id),
+          doctorName: a.providerName.isNotEmpty
+              ? 'Dr. ${a.providerName}'
+              : 'Doctor',
+          date: a.dateTime,
+          notes: a.reason,
+          status: a.status,
+          onCancel: (!isPast && a.status != 'cancelled')
+              ? () async {
+                  final confirmed = await _confirmCancel(context);
+                  if (confirmed) await apptService.cancelAppointment(a.id);
+                }
+              : null,
         );
       },
     );
   }
+
+  Future<bool> _confirmCancel(BuildContext ctx) async {
+    return await showDialog<bool>(
+          context: ctx,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            title: const Text('Cancel Appointment'),
+            content: const Text('Are you sure you want to cancel this appointment?'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('No')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Yes, Cancel',
+                    style: TextStyle(color: AppColors.danger)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
 }
+
+

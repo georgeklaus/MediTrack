@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // ─────────────────────────────────────────────
-// Colors extracted from DigiClinic HTML template
 // Primary: #0049e8  |  Accent: #4cbdff
 // Background: #e6eef5  |  Dark accent: #03045e
 // ─────────────────────────────────────────────

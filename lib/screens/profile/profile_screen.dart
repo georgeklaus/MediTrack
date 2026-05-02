@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
-import '../auth/login_screen.dart';
+import '../role_selection_screen.dart';
 import 'account_information_screen.dart';
 import 'notifications_screen.dart';
 import 'privacy_security_screen.dart';
@@ -182,7 +182,7 @@ class ProfileScreen extends StatelessWidget {
                             if (context.mounted) {
                               Navigator.of(context).pushAndRemoveUntil(
                                 MaterialPageRoute(
-                                    builder: (_) => const LoginScreen()),
+                                    builder: (_) => const RoleSelectionScreen()),
                                 (route) => false,
                               );
                             }
