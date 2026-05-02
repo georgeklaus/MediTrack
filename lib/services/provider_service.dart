@@ -60,7 +60,48 @@ class ProviderService {
   }
 
   Future<void> updateAppointmentStatus(String appointmentId, String status) async {
-    await _db.collection('appointments').doc(appointmentId).update({'status': status});
+    // Update status
+    await _db
+        .collection('appointments')
+        .doc(appointmentId)
+        .update({'status': status});
+
+    // Notify the patient
+    final apptDoc =
+        await _db.collection('appointments').doc(appointmentId).get();
+    final apptData = apptDoc.data();
+    if (apptData == null) return;
+    final patientId = apptData['patientId'] as String?;
+    if (patientId == null) return;
+
+    // Fetch provider name
+    final providerDoc = await _db.collection('users').doc(currentUid).get();
+    final providerData = providerDoc.data();
+    final providerName = providerData?['name'] as String? ?? 'Your doctor';
+
+    String message;
+    switch (status) {
+      case 'confirmed':
+        message = 'Dr. $providerName has confirmed your appointment.';
+        break;
+      case 'completed':
+        message = 'Your appointment with Dr. $providerName is marked as completed.';
+        break;
+      case 'cancelled':
+        message = 'Dr. $providerName has declined your appointment request.';
+        break;
+      default:
+        message = 'Your appointment status has been updated to $status.';
+    }
+
+    await _db.collection('notifications').add({
+      'recipientUid': patientId,
+      'type': 'appointment_update',
+      'message': message,
+      'read': false,
+      'appointmentId': appointmentId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Returns unique patients who have appointments with this provider.
@@ -106,6 +147,7 @@ class ProviderService {
     required String prescription,
     required String followUp,
     required DateTime visitDate,
+    List<Map<String, String>> medications = const [],
   }) async {
     final uid = currentUid;
     if (uid == null) return;
@@ -124,6 +166,27 @@ class ProviderService {
       'date': Timestamp.fromDate(visitDate),
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    // Write prescribed medications to the patient's medications collection
+    if (medications.isNotEmpty) {
+      final batch = _db.batch();
+      for (final med in medications) {
+        final ref = _db.collection('medications').doc();
+        batch.set(ref, {
+          'userId': patientId,
+          'name': med['name'] ?? '',
+          'form': med['form'] ?? 'Tablet',
+          'dosage': med['dosage'] ?? '',
+          'frequency': med['frequency'] ?? '',
+          'duration': med['duration'] ?? '',
+          'source': 'doctor',
+          'prescribedBy': providerName,
+          'prescribedById': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
   }
 
   /// Availability is stored per provider.

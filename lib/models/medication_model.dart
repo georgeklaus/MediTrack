@@ -5,7 +5,13 @@ class MedicationModel {
   final String userId;
   final String name;
   final String dosage;
-  final DateTime time;
+  final String form;           // Tablet, Capsule, Syrup, Injection, Cream, etc.
+  final String frequency;      // Once daily, Twice daily, etc.
+  final String duration;       // 3 days, 7 days, 1 month, etc.
+  final String source;         // 'self' | 'doctor'
+  final String? prescribedBy;  // Doctor name, only when source == 'doctor'
+  final String? prescribedById;
+  final DateTime? time;        // reminder time (self-added only)
   final DateTime createdAt;
 
   MedicationModel({
@@ -13,7 +19,13 @@ class MedicationModel {
     required this.userId,
     required this.name,
     required this.dosage,
-    required this.time,
+    required this.form,
+    required this.frequency,
+    required this.duration,
+    required this.source,
+    this.prescribedBy,
+    this.prescribedById,
+    this.time,
     required this.createdAt,
   });
 
@@ -24,7 +36,13 @@ class MedicationModel {
       userId: map['userId'] ?? '',
       name: map['name'] ?? '',
       dosage: map['dosage'] ?? '',
-      time: (map['time'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      form: map['form'] ?? 'Tablet',
+      frequency: map['frequency'] ?? '',
+      duration: map['duration'] ?? '',
+      source: map['source'] ?? 'self',
+      prescribedBy: map['prescribedBy'] as String?,
+      prescribedById: map['prescribedById'] as String?,
+      time: (map['time'] as Timestamp?)?.toDate(),
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -33,7 +51,13 @@ class MedicationModel {
         'userId': userId,
         'name': name,
         'dosage': dosage,
-        'time': Timestamp.fromDate(time),
+        'form': form,
+        'frequency': frequency,
+        'duration': duration,
+        'source': source,
+        if (prescribedBy != null) 'prescribedBy': prescribedBy,
+        if (prescribedById != null) 'prescribedById': prescribedById,
+        if (time != null) 'time': Timestamp.fromDate(time!),
         'createdAt': FieldValue.serverTimestamp(),
       };
 }

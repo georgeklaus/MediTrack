@@ -24,7 +24,7 @@ class ProviderDashboardScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // ── Header ────────────────────────────────────────────────────
               Row(
                 children: [
                   Expanded(
@@ -58,44 +58,108 @@ class ProviderDashboardScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              // Stats row
+              // ── Stats row (all appointments stream) ───────────────────────
               StreamBuilder<QuerySnapshot>(
-                stream: providerService.todayAppointmentsStream(),
-                builder: (context, snap) {
-                  final todayCount = snap.data?.docs.length ?? 0;
-                  final pending = snap.data?.docs
-                          .where((d) =>
-                              (d.data() as Map)['status'] == 'pending')
-                          .length ??
-                      0;
-                  return Row(
+                stream: providerService.appointmentsStream(),
+                builder: (context, allSnap) {
+                  final allDocs = allSnap.data?.docs ?? [];
+                  final now = DateTime.now();
+                  final startOfDay = DateTime(now.year, now.month, now.day);
+                  final endOfDay = startOfDay.add(const Duration(days: 1));
+
+                  final todayCount = allDocs.where((d) {
+                    final ts = (d.data() as Map)['dateTime'] as Timestamp?;
+                    final dt = ts?.toDate();
+                    return dt != null &&
+                        dt.isAfter(startOfDay) &&
+                        dt.isBefore(endOfDay);
+                  }).length;
+
+                  final pendingCount = allDocs
+                      .where((d) => (d.data() as Map)['status'] == 'pending')
+                      .length;
+
+                  final uniquePatients = allDocs
+                      .map((d) => (d.data() as Map)['patientId'] as String?)
+                      .whereType<String>()
+                      .toSet()
+                      .length;
+
+                  return Column(
                     children: [
-                      Expanded(
-                        child: _StatCard(
-                          label: "Today's\nAppointments",
-                          value: '$todayCount',
-                          icon: Icons.calendar_today,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _StatCard(
-                          label: 'Pending\nRequests',
-                          value: '$pending',
-                          icon: Icons.pending_actions,
-                          color: AppColors.warning,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              label: "Today's\nAppointments",
+                              value: '$todayCount',
+                              icon: Icons.calendar_today,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: 'Pending\nRequests',
+                              value: '$pendingCount',
+                              icon: Icons.pending_actions,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: 'Total\nPatients',
+                              value: '$uniquePatients',
+                              icon: Icons.people_outline,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
-              // Today's appointments
-              Text("Today's Appointments",
-                  style: Theme.of(context).textTheme.titleLarge),
+              // ── Pending Requests ──────────────────────────────────────────
+              _SectionHeader(title: 'Pending Requests', icon: Icons.pending_actions, color: AppColors.warning),
+              const SizedBox(height: 12),
+              StreamBuilder<QuerySnapshot>(
+                stream: providerService.appointmentsStream(),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final pending = (snap.data?.docs ?? [])
+                      .where((d) => (d.data() as Map)['status'] == 'pending')
+                      .toList()
+                    ..sort((a, b) {
+                      final ta = ((a.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+                      final tb = ((b.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+                      if (ta == null || tb == null) return 0;
+                      return ta.compareTo(tb);
+                    });
+                  if (pending.isEmpty) {
+                    return const _EmptyCard(message: 'No pending requests.');
+                  }
+                  return Column(
+                    children: pending.map((doc) => _AppointmentTile(
+                      docId: doc.id,
+                      data: doc.data() as Map<String, dynamic>,
+                      providerService: providerService,
+                      onPatientTap: (pid) => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => PatientDetailsScreen(patientId: pid)),
+                      ),
+                    )).toList(),
+                  );
+                },
+              ),
+              const SizedBox(height: 28),
+
+              // ── Today's Schedule ──────────────────────────────────────────
+              _SectionHeader(title: "Today's Schedule", icon: Icons.today, color: AppColors.primary),
               const SizedBox(height: 12),
               StreamBuilder<QuerySnapshot>(
                 stream: providerService.todayAppointmentsStream(),
@@ -103,26 +167,75 @@ class ProviderDashboardScreen extends StatelessWidget {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final docs = snap.data?.docs ?? [];
+                  final docs = (snap.data?.docs ?? [])
+                    ..sort((a, b) {
+                      final ta = ((a.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+                      final tb = ((b.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+                      if (ta == null || tb == null) return 0;
+                      return ta.compareTo(tb);
+                    });
                   if (docs.isEmpty) {
-                    return _EmptyCard(message: 'No appointments today.');
+                    return const _EmptyCard(message: 'No appointments scheduled today.');
                   }
                   return Column(
-                    children: docs.map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return _AppointmentTile(
-                        docId: doc.id,
-                        data: data,
-                        providerService: providerService,
-                        onPatientTap: (patientId) =>
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => PatientDetailsScreen(patientId: patientId),
-                            )),
-                      );
-                    }).toList(),
+                    children: docs.map((doc) => _AppointmentTile(
+                      docId: doc.id,
+                      data: doc.data() as Map<String, dynamic>,
+                      providerService: providerService,
+                      onPatientTap: (pid) => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => PatientDetailsScreen(patientId: pid)),
+                      ),
+                    )).toList(),
                   );
                 },
               ),
+              const SizedBox(height: 28),
+
+              // ── Upcoming (next 7 days, non-pending) ───────────────────────
+              _SectionHeader(title: 'Upcoming This Week', icon: Icons.date_range, color: AppColors.success),
+              const SizedBox(height: 12),
+              StreamBuilder<QuerySnapshot>(
+                stream: providerService.appointmentsStream(),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final now = DateTime.now();
+                  final endOfWeek = now.add(const Duration(days: 7));
+                  final upcoming = (snap.data?.docs ?? []).where((d) {
+                    final data = d.data() as Map;
+                    final ts = data['dateTime'] as Timestamp?;
+                    final dt = ts?.toDate();
+                    final status = data['status'] as String? ?? '';
+                    return dt != null &&
+                        dt.isAfter(now) &&
+                        dt.isBefore(endOfWeek) &&
+                        status != 'cancelled' &&
+                        status != 'pending';
+                  }).toList()
+                    ..sort((a, b) {
+                      final ta = ((a.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+                      final tb = ((b.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+                      if (ta == null || tb == null) return 0;
+                      return ta.compareTo(tb);
+                    });
+                  if (upcoming.isEmpty) {
+                    return const _EmptyCard(message: 'No confirmed appointments this week.');
+                  }
+                  return Column(
+                    children: upcoming.map((doc) => _AppointmentTile(
+                      docId: doc.id,
+                      data: doc.data() as Map<String, dynamic>,
+                      providerService: providerService,
+                      showDate: true,
+                      onPatientTap: (pid) => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => PatientDetailsScreen(patientId: pid)),
+                      ),
+                    )).toList(),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -137,6 +250,36 @@ class ProviderDashboardScreen extends StatelessWidget {
     return 'Evening';
   }
 }
+
+// ── Section header ─────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+
+  const _SectionHeader({required this.title, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: color, size: 16),
+        ),
+        const SizedBox(width: 10),
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
+      ],
+    );
+  }
+}
+
+// ── Stat card ──────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final String label;
@@ -154,7 +297,7 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -170,24 +313,24 @@ class _StatCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: color, size: 18),
           ),
           const SizedBox(height: 10),
           Text(
             value,
             style: TextStyle(
-                fontSize: 28, fontWeight: FontWeight.bold, color: color),
+                fontSize: 26, fontWeight: FontWeight.bold, color: color),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             label,
             style: const TextStyle(
-                fontSize: 12, color: AppColors.textSecondary, height: 1.3),
+                fontSize: 11, color: AppColors.textSecondary, height: 1.3),
           ),
         ],
       ),
@@ -195,24 +338,32 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+// ── Appointment tile ───────────────────────────────────────────────────────
+
 class _AppointmentTile extends StatelessWidget {
   final String docId;
   final Map<String, dynamic> data;
   final ProviderService providerService;
   final void Function(String patientId) onPatientTap;
+  final bool showDate;
 
   const _AppointmentTile({
     required this.docId,
     required this.data,
     required this.providerService,
     required this.onPatientTap,
+    this.showDate = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final ts = data['dateTime'] as Timestamp?;
     final dt = ts?.toDate();
-    final timeStr = dt != null ? DateFormat('h:mm a').format(dt) : '—';
+    final timeStr = dt != null
+        ? showDate
+            ? DateFormat('EEE, MMM d · h:mm a').format(dt)
+            : DateFormat('h:mm a').format(dt)
+        : '—';
     final patientName = data['patientName'] ?? 'Patient';
     final reason = data['reason'] ?? '';
     final status = data['status'] ?? 'pending';
@@ -250,8 +401,8 @@ class _AppointmentTile extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
@@ -273,6 +424,8 @@ class _AppointmentTile extends StatelessWidget {
                 ),
                 if (reason.isNotEmpty)
                   Text(reason,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 12)),
                 Text(timeStr,
@@ -285,14 +438,13 @@ class _AppointmentTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: statusColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  status,
+                  status[0].toUpperCase() + status.substring(1),
                   style: TextStyle(
                       color: statusColor,
                       fontSize: 11,
@@ -301,14 +453,26 @@ class _AppointmentTile extends StatelessWidget {
               ),
               if (status == 'pending') ...[
                 const SizedBox(height: 6),
-                GestureDetector(
-                  onTap: () => providerService.updateAppointmentStatus(
-                      docId, 'confirmed'),
-                  child: const Text('Confirm',
-                      style: TextStyle(
-                          color: AppColors.success,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => providerService.updateAppointmentStatus(docId, 'confirmed'),
+                      child: const Text('Confirm',
+                          style: TextStyle(
+                              color: AppColors.success,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: () => providerService.updateAppointmentStatus(docId, 'cancelled'),
+                      child: const Text('Decline',
+                          style: TextStyle(
+                              color: AppColors.danger,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -319,6 +483,8 @@ class _AppointmentTile extends StatelessWidget {
   }
 }
 
+// ── Empty state card ───────────────────────────────────────────────────────
+
 class _EmptyCard extends StatelessWidget {
   final String message;
   const _EmptyCard({required this.message});
@@ -327,7 +493,7 @@ class _EmptyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),

@@ -21,15 +21,17 @@ class MedicationService {
     required String dosage,
     required DateTime time,
   }) async {
-    final med = MedicationModel(
-      id: '',
-      userId: userId,
-      name: name,
-      dosage: dosage,
-      time: time,
-      createdAt: DateTime.now(),
-    );
-    await _db.collection('medications').add(med.toMap());
+    await _db.collection('medications').add({
+      'userId': userId,
+      'name': name,
+      'dosage': dosage,
+      'form': 'Tablet',
+      'frequency': '',
+      'duration': '',
+      'source': 'self',
+      'time': Timestamp.fromDate(time),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> deleteMedication(String medId) async {

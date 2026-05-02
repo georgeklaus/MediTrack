@@ -8,6 +8,7 @@ import 'services/medication_service.dart';
 import 'services/appointment_service.dart';
 import 'services/record_service.dart';
 import 'services/provider_service.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/role_selection_screen.dart';
 import 'widgets/app_shell.dart';
@@ -16,6 +17,7 @@ import 'screens/provider/provider_shell.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await NotificationService().init();
   runApp(const MediTrackApp());
 }
 
@@ -58,6 +60,9 @@ class _AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData && snapshot.data != null) {
+          // Start listening for in-app notifications for this user
+          NotificationService().startListening(snapshot.data!.uid);
+
           // User is logged in — determine role and route accordingly
           return FutureBuilder<String>(
             future: authService.getUserRole(),
@@ -75,7 +80,8 @@ class _AuthGate extends StatelessWidget {
             },
           );
         }
-        // Not logged in — show role selection
+        // Not logged in — stop listening and show role selection
+        NotificationService().stopListening();
         return const RoleSelectionScreen();
       },
     );

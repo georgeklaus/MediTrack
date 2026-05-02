@@ -3,6 +3,21 @@ import 'package:provider/provider.dart';
 import '../../services/provider_service.dart';
 import '../../theme/app_theme.dart';
 
+// Per-medication entry controllers
+class _MedEntry {
+  final nameCtrl = TextEditingController();
+  final dosageCtrl = TextEditingController();
+  final durationCtrl = TextEditingController();
+  String form = 'Tablet';
+  String frequency = 'Once daily';
+
+  void dispose() {
+    nameCtrl.dispose();
+    dosageCtrl.dispose();
+    durationCtrl.dispose();
+  }
+}
+
 class AddMedicalNoteScreen extends StatefulWidget {
   final String patientId;
 
@@ -21,12 +36,27 @@ class _AddMedicalNoteScreenState extends State<AddMedicalNoteScreen> {
   DateTime _visitDate = DateTime.now();
   bool _loading = false;
 
+  bool _showMedications = false;
+  final List<_MedEntry> _meds = [];
+
+  static const _formOptions = [
+    'Tablet', 'Capsule', 'Syrup', 'Injection', 'Cream', 'Drops', 'Inhaler',
+  ];
+  static const _freqOptions = [
+    'Once daily', 'Twice daily', 'Three times daily', 'Four times daily',
+    'Every 6 hours', 'Every 8 hours', 'Every 12 hours',
+    'As needed', 'Before meals', 'After meals', 'At bedtime',
+  ];
+
   @override
   void dispose() {
     _diagnosisCtrl.dispose();
     _notesCtrl.dispose();
     _prescriptionCtrl.dispose();
     _followUpCtrl.dispose();
+    for (final m in _meds) {
+      m.dispose();
+    }
     super.dispose();
   }
 
@@ -40,10 +70,33 @@ class _AddMedicalNoteScreenState extends State<AddMedicalNoteScreen> {
     if (picked != null) setState(() => _visitDate = picked);
   }
 
+  void _addMedEntry() {
+    setState(() => _meds.add(_MedEntry()));
+  }
+
+  void _removeMedEntry(int index) {
+    setState(() {
+      _meds[index].dispose();
+      _meds.removeAt(index);
+    });
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
+      // Collect medications
+      final meds = _meds
+          .where((m) => m.nameCtrl.text.trim().isNotEmpty)
+          .map((m) => {
+                'name': m.nameCtrl.text.trim(),
+                'form': m.form,
+                'dosage': m.dosageCtrl.text.trim(),
+                'frequency': m.frequency,
+                'duration': m.durationCtrl.text.trim(),
+              })
+          .toList();
+
       await context.read<ProviderService>().addMedicalNote(
             patientId: widget.patientId,
             diagnosis: _diagnosisCtrl.text.trim(),
@@ -51,10 +104,15 @@ class _AddMedicalNoteScreenState extends State<AddMedicalNoteScreen> {
             prescription: _prescriptionCtrl.text.trim(),
             followUp: _followUpCtrl.text.trim(),
             visitDate: _visitDate,
+            medications: meds,
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Medical note saved.')),
+          SnackBar(
+            content: Text(meds.isNotEmpty
+                ? 'Note saved with ${meds.length} medication(s).'
+                : 'Medical note saved.'),
+          ),
         );
         Navigator.of(context).pop();
       }
@@ -102,8 +160,8 @@ class _AddMedicalNoteScreenState extends State<AddMedicalNoteScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
                         ),
-                        const Icon(Icons.edit, size: 16,
-                            color: AppColors.textSecondary),
+                        const Icon(Icons.edit,
+                            size: 16, color: AppColors.textSecondary),
                       ],
                     ),
                   ),
@@ -150,6 +208,99 @@ class _AddMedicalNoteScreenState extends State<AddMedicalNoteScreen> {
                     prefixIcon: Icon(Icons.next_plan_outlined),
                   ),
                 ),
+                const SizedBox(height: 20),
+
+                // ── Medications toggle ───────────────────────────────────
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _showMedications = !_showMedications;
+                      if (_showMedications && _meds.isEmpty) _addMedEntry();
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _showMedications
+                          ? AppColors.primary.withValues(alpha: 0.08)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _showMedications
+                            ? AppColors.primary
+                            : AppColors.divider,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.medication,
+                            color: _showMedications
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
+                            size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Prescribe Medications',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: _showMedications
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        if (_showMedications && _meds.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_meds.length}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          _showMedications
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: AppColors.textSecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                if (_showMedications) ...[
+                  const SizedBox(height: 12),
+                  ..._meds.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final med = entry.value;
+                    return _MedEntryCard(
+                      index: i,
+                      entry: med,
+                      formOptions: _formOptions,
+                      freqOptions: _freqOptions,
+                      onRemove: () => _removeMedEntry(i),
+                      onChanged: () => setState(() {}),
+                    );
+                  }),
+                  TextButton.icon(
+                    onPressed: _addMedEntry,
+                    icon: const Icon(Icons.add_circle_outline,
+                        color: AppColors.primary),
+                    label: const Text('Add Another Medication',
+                        style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+
                 const SizedBox(height: 28),
                 _loading
                     ? const Center(child: CircularProgressIndicator())
@@ -165,3 +316,128 @@ class _AddMedicalNoteScreenState extends State<AddMedicalNoteScreen> {
     );
   }
 }
+
+// ── Single medication entry card ──────────────────────────────────────────
+
+class _MedEntryCard extends StatelessWidget {
+  final int index;
+  final _MedEntry entry;
+  final List<String> formOptions;
+  final List<String> freqOptions;
+  final VoidCallback onRemove;
+  final VoidCallback onChanged;
+
+  const _MedEntryCard({
+    required this.index,
+    required this.entry,
+    required this.formOptions,
+    required this.freqOptions,
+    required this.onRemove,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Medication ${index + 1}',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                    fontSize: 13),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onRemove,
+                child: const Icon(Icons.close,
+                    size: 18, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: entry.nameCtrl,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Medicine Name *',
+              prefixIcon: Icon(Icons.medication_outlined),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: entry.form,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                      labelText: 'Form', isDense: true),
+                  items: formOptions
+                      .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) {
+                      entry.form = v;
+                      onChanged();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: entry.dosageCtrl,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Dosage (e.g. 500mg)',
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            initialValue: entry.frequency,
+            isDense: true,
+            decoration:
+                const InputDecoration(labelText: 'Frequency', isDense: true),
+            items: freqOptions
+                .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) {
+                entry.frequency = v;
+                onChanged();
+              }
+            },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: entry.durationCtrl,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: 'Duration (e.g. 7 days, 2 weeks)',
+              prefixIcon: Icon(Icons.timelapse_outlined),
+              isDense: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

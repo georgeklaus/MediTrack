@@ -195,7 +195,7 @@ class _AppointmentCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                if (status == 'pending')
+                if (status == 'pending') ...[
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => providerService
@@ -206,7 +206,24 @@ class _AppointmentCard extends StatelessWidget {
                       child: const Text('Confirm'),
                     ),
                   ),
-                if (status == 'pending') const SizedBox(width: 8),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        final ok = await _confirmDecline(context);
+                        if (ok) {
+                          providerService.updateAppointmentStatus(
+                              docId, 'cancelled');
+                        }
+                      },
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger)),
+                      child: const Text('Decline'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => providerService
@@ -222,5 +239,29 @@ class _AppointmentCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<bool> _confirmDecline(BuildContext ctx) async {
+    return await showDialog<bool>(
+          context: ctx,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            title: const Text('Decline Appointment'),
+            content: const Text(
+                'Are you sure you want to decline this appointment request?'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('No')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Yes, Decline',
+                    style: TextStyle(color: AppColors.danger)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }

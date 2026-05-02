@@ -362,7 +362,11 @@ class _MedTile extends StatelessWidget {
             ),
           ),
           Text(
-            DateFormat('h:mm a').format(medication.time),
+            medication.time != null
+                ? DateFormat('h:mm a').format(medication.time!)
+                : medication.frequency.isNotEmpty
+                    ? medication.frequency
+                    : '',
             style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
