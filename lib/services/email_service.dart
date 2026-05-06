@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -8,10 +9,10 @@ const _kServiceId = 'service_pslasoo';
 const _kPublicKey  = '0nk4CLQ4WcVN3z0TQ';
 
 // ─── Two generic templates ────────────────────────────────────────────────────
-// template_registration  → registration emails (patient welcome + provider pending)
-// template_appointment   → appointment emails (booked patient, booked provider, confirmed)
-const _kTplRegistration = 'template_registration';
-const _kTplAppointment  = 'template_appointment';
+// template_gz4qiv9 (Welcome)        → registration emails (patient welcome + provider pending)
+// template_ngfrwwj (Password Reset) → appointment emails (booked patient, booked provider, confirmed)
+const _kTplRegistration = 'template_gz4qiv9';
+const _kTplAppointment  = 'template_ngfrwwj';
 
 /// Thin wrapper around the EmailJS REST API for sending transactional emails.
 /// All send calls are fire-and-forget — failures are swallowed so they never
@@ -27,18 +28,21 @@ class EmailService {
 
   Future<void> _send(String templateId, Map<String, String> params) async {
     try {
-      await http.post(
+      final body = jsonEncode({
+        'service_id': _kServiceId,
+        'template_id': templateId,
+        'user_id': _kPublicKey,
+        'template_params': params,
+      });
+      dev.log('[EmailService] Sending → template: $templateId, to: ${params['to_email']}');
+      final response = await http.post(
         Uri.parse(_endpoint),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'service_id': _kServiceId,
-          'template_id': templateId,
-          'user_id': _kPublicKey,
-          'template_params': params,
-        }),
+        body: body,
       );
-    } catch (_) {
-      // Email sending is non-critical; never propagate failures.
+      dev.log('[EmailService] Response ${response.statusCode}: ${response.body}');
+    } catch (e) {
+      dev.log('[EmailService] ERROR: $e');
     }
   }
 
@@ -85,7 +89,7 @@ class EmailService {
         'email_title':     'Thank you for registering, $name!',
         'email_body':
             'Your application to join MediTrack as a Medical Provider has been received '
-            'and is currently pending verification. Our team is reviewing your credentials — '
+            'and is currently pending verification. Administration is reviewing your credentials — '
             'this typically takes 1–2 business days. '
             'You will receive another email once your account is approved. '
             'You can also open the app and tap "Check Approval Status" at any time.',
