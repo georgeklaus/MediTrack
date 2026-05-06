@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/profile_service.dart';
 import '../../theme/app_theme.dart';
 import '../role_selection_screen.dart';
 import 'account_information_screen.dart';
@@ -10,13 +12,82 @@ import 'help_support_screen.dart';
 import 'about_screen.dart';
 
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  File? _pendingPhoto;
+  bool _uploadingPhoto = false;
+  String? _photoUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPhotoUrl();
+  }
+
+  Future<void> _loadPhotoUrl() async {
+    final data = await context.read<ProfileService>().getUserData();
+    if (mounted && data != null) {
+      setState(() => _photoUrl = data['photoUrl'] as String?);
+    }
+  }
+
+  Future<void> _pickPhoto() async {
+    final ps = context.read<ProfileService>();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Take photo'),
+            onTap: () => Navigator.pop(context, 'camera'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Choose from gallery'),
+            onTap: () => Navigator.pop(context, 'gallery'),
+          ),
+        ]),
+      ),
+    );
+    if (choice == null) return;
+    final file = choice == 'camera'
+        ? await ps.pickFromCamera()
+        : await ps.pickFromGallery();
+    if (file == null || !mounted) return;
+    setState(() { _pendingPhoto = file; _uploadingPhoto = true; });
+    try {
+      final url = await ps.uploadPhoto(file);
+      await ps.updatePatientProfile(photoUrl: url);
+      if (mounted) setState(() { _photoUrl = url; _uploadingPhoto = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Photo upload failed: $e')));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final user = auth.currentUser;
+
+    ImageProvider? avatarImage;
+    if (_pendingPhoto != null) {
+      avatarImage = FileImage(_pendingPhoto!);
+    } else if (_photoUrl != null) {
+      avatarImage = NetworkImage(_photoUrl!);
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -41,19 +112,54 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 44,
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                      child: Text(
-                        (user?.displayName?.isNotEmpty == true)
-                            ? user!.displayName![0].toUpperCase()
-                            : 'U',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 36,
-                          fontWeight: FontWeight.w700,
+                    Stack(
+                      children: [
+                        GestureDetector(
+                          onTap: _uploadingPhoto ? null : _pickPhoto,
+                          child: CircleAvatar(
+                            radius: 44,
+                            backgroundImage: avatarImage,
+                            backgroundColor:
+                                Colors.white.withValues(alpha: 0.2),
+                            child: avatarImage == null
+                                ? Text(
+                                    (user?.displayName?.isNotEmpty == true)
+                                        ? user!.displayName![0].toUpperCase()
+                                        : 'U',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 36,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  )
+                                : null,
+                          ),
                         ),
-                      ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: _uploadingPhoto ? null : _pickPhoto,
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: AppColors.primary, width: 1.5),
+                              ),
+                              child: _uploadingPhoto
+                                  ? const SizedBox(
+                                      height: 14,
+                                      width: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.camera_alt,
+                                      color: AppColors.primary, size: 14),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     Text(

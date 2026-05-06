@@ -7,12 +7,16 @@ class UserModel {
   final String name;
   final String email;
   final UserRole role;
+  final String? phone;
+  final String? photoUrl;
 
   UserModel({
     required this.id,
     required this.name,
     required this.email,
     this.role = UserRole.patient,
+    this.phone,
+    this.photoUrl,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map, String id) {
@@ -21,6 +25,8 @@ class UserModel {
       name: map['name'] ?? '',
       email: map['email'] ?? '',
       role: map['role'] == 'provider' ? UserRole.provider : UserRole.patient,
+      phone: map['phone'],
+      photoUrl: map['photoUrl'],
     );
   }
 
@@ -32,5 +38,7 @@ class UserModel {
         'name': name,
         'email': email,
         'role': role == UserRole.provider ? 'provider' : 'patient',
+        if (phone != null) 'phone': phone,
+        if (photoUrl != null) 'photoUrl': photoUrl,
       };
 }

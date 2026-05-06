@@ -10,6 +10,7 @@ import 'services/record_service.dart';
 import 'services/provider_service.dart';
 import 'services/notification_service.dart';
 import 'services/document_service.dart';
+import 'services/profile_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/role_selection_screen.dart';
 import 'widgets/app_shell.dart';
@@ -35,6 +36,7 @@ class MediTrackApp extends StatelessWidget {
         Provider<RecordService>(create: (_) => RecordService()),
         Provider<ProviderService>(create: (_) => ProviderService()),
         Provider<DocumentService>(create: (_) => DocumentService()),
+        Provider<ProfileService>(create: (_) => ProfileService()),
       ],
       child: MaterialApp(
         title: 'MediTrack',

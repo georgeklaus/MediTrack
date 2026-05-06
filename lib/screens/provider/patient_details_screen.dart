@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../services/provider_service.dart';
 import '../../theme/app_theme.dart';
 import 'add_medical_note_screen.dart';
+import 'provider_documents_screen.dart';
 
 class PatientDetailsScreen extends StatelessWidget {
   final String patientId;
@@ -86,6 +87,35 @@ class PatientDetailsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+                const SizedBox(height: 24),
+
+                // Quick actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    AddMedicalNoteScreen(patientId: patientId))),
+                        icon: const Icon(Icons.note_add_outlined),
+                        label: const Text('Add Note'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => ProviderDocumentsScreen(
+                                    patientId: patientId,
+                                    patientName: name))),
+                        icon: const Icon(Icons.upload_file_outlined),
+                        label: const Text('Files'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
 

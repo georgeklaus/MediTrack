@@ -7,6 +7,7 @@ class ProviderModel {
   final String? phone;
   final String? specialization;
   final String? facility;
+  final String? photoUrl;
 
   ProviderModel({
     required this.id,
@@ -15,6 +16,7 @@ class ProviderModel {
     this.phone,
     this.specialization,
     this.facility,
+    this.photoUrl,
   });
 
   factory ProviderModel.fromMap(Map<String, dynamic> map, String id) {
@@ -25,6 +27,7 @@ class ProviderModel {
       phone: map['phone'],
       specialization: map['specialization'],
       facility: map['facility'],
+      photoUrl: map['photoUrl'],
     );
   }
 
@@ -39,5 +42,6 @@ class ProviderModel {
         if (phone != null) 'phone': phone,
         if (specialization != null) 'specialization': specialization,
         if (facility != null) 'facility': facility,
+        if (photoUrl != null) 'photoUrl': photoUrl,
       };
 }
