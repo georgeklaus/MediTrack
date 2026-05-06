@@ -83,7 +83,7 @@ class _ProviderRegisterScreenState extends State<ProviderRegisterScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Your provider account is pending verification. You will receive an email once our team approves your credentials.',
+                'Your provider account is pending verification. You will receive an email once the administration approves your credentials.',
                 style: Theme.of(ctx).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
