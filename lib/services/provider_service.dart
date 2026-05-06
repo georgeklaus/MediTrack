@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/provider_model.dart';
+import 'email_service.dart';
 
 class ProviderService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -102,6 +103,18 @@ class ProviderService {
       'appointmentId': appointmentId,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    // Send email notification when appointment is confirmed
+    if (status == 'confirmed') {
+      final ts = apptData['dateTime'] as Timestamp?;
+      if (ts != null) {
+        EmailService.instance.sendAppointmentConfirmed(
+          patientId: patientId,
+          providerName: providerName,
+          dateTime: ts.toDate(),
+        );
+      }
+    }
   }
 
   /// Returns unique patients who have appointments with this provider.

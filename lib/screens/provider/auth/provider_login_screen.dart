@@ -4,6 +4,7 @@ import '../../../services/auth_service.dart';
 import '../../../theme/app_theme.dart';
 import '../provider_shell.dart';
 import 'provider_register_screen.dart';
+import 'provider_pending_screen.dart';
 
 class ProviderLoginScreen extends StatefulWidget {
   const ProviderLoginScreen({super.key});
@@ -45,6 +46,16 @@ class _ProviderLoginScreenState extends State<ProviderLoginScreen> {
           _error = 'This account is not registered as a provider.';
           _loading = false;
         });
+        return;
+      }
+      // Check if the provider account is still pending verification
+      final status = await authService.getProviderStatus();
+      if (!mounted) return;
+      if (status == 'pending') {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const ProviderPendingScreen()),
+          (route) => false,
+        );
         return;
       }
       Navigator.of(context).pushAndRemoveUntil(

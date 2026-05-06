@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/email_service.dart';
 import '../../theme/app_theme.dart';
 import 'login_screen.dart';
 
@@ -41,6 +42,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         name: name,
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text,
+      );
+      // Send welcome email (non-blocking)
+      EmailService.instance.sendPatientWelcome(
+        name: name,
+        email: _emailCtrl.text.trim(),
       );
       // Sign out immediately so user must log in explicitly
       await authService.logout();

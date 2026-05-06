@@ -32,6 +32,7 @@ class AuthService {
       'email': email.trim(),
       'role': role,
     };
+    if (role == 'provider') data['status'] = 'pending';
     if (phone != null && phone.isNotEmpty) data['phone'] = phone.trim();
     if (specialization != null && specialization.isNotEmpty) data['specialization'] = specialization.trim();
     if (facility != null && facility.isNotEmpty) data['facility'] = facility.trim();
@@ -93,5 +94,16 @@ class AuthService {
     await user.reauthenticateWithCredential(credential);
     await _db.collection('users').doc(user.uid).delete();
     await user.delete();
+  }
+
+  /// Returns the provider account status: 'pending' | 'active'.
+  /// Defaults to 'active' for patients (no status field) or unknown users.
+  Future<String> getProviderStatus() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return 'active';
+    final doc = await _db.collection('users').doc(uid).get();
+    if (!doc.exists) return 'active';
+    final data = doc.data() as Map<String, dynamic>;
+    return data['status'] as String? ?? 'active';
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/email_service.dart';
 import '../../../theme/app_theme.dart';
 import 'provider_login_screen.dart';
 
@@ -51,6 +52,11 @@ class _ProviderRegisterScreenState extends State<ProviderRegisterScreen> {
         specialization: _specializationCtrl.text.trim(),
         facility: _facilityCtrl.text.trim(),
       );
+      // Send pending verification email (non-blocking)
+      EmailService.instance.sendProviderPendingVerification(
+        name: _nameCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+      );
       await authService.logout();
       if (!mounted) return;
       await showDialog(
@@ -64,20 +70,20 @@ class _ProviderRegisterScreenState extends State<ProviderRegisterScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.success.withValues(alpha: 0.1),
+                  color: AppColors.warning.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_circle, color: AppColors.success, size: 48),
+                child: const Icon(Icons.hourglass_top_rounded, color: AppColors.warning, size: 48),
               ),
               const SizedBox(height: 16),
               Text(
-                'Registration Successful!',
+                'Registration Submitted!',
                 style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
-                'Your provider account has been created. Please log in to continue.',
+                'Your provider account is pending verification. You will receive an email once our team approves your credentials.',
                 style: Theme.of(ctx).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),

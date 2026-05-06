@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/appointment_model.dart';
 import '../models/medical_note_model.dart';
+import 'email_service.dart';
 
 class AppointmentService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -47,6 +48,19 @@ class AppointmentService {
       'appointmentId': ref.id,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    // Email notifications (non-blocking)
+    final patientEmail = _auth.currentUser?.email ?? '';
+    if (patientEmail.isNotEmpty) {
+      EmailService.instance.sendAppointmentBooked(
+        patientName: patientName,
+        patientEmail: patientEmail,
+        providerId: providerId,
+        providerName: providerName,
+        dateTime: dateTime,
+        reason: reason,
+      );
+    }
   }
 
   Future<void> cancelAppointment(String appointmentId) async {
