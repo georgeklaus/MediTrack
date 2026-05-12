@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -34,20 +35,66 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
+/// Minimal data carried when the user swipes to reply.
+class _ReplyPreview {
+  final String id;
+  final String senderName;
+  final String text;
+  const _ReplyPreview(
+      {required this.id, required this.senderName, required this.text});
+}
+
 class _ChatScreenState extends State<ChatScreen> {
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  final _textFocusNode = FocusNode();
   bool _sending = false;
   bool _uploading = false;
   Timer? _typingTimer;
+  _ReplyPreview? _replyTo;
+  // Cached streams — created once so they're never recreated on rebuild
+  late final Stream<List<MessageModel>> _messagesStream;
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _convStream;
+  // GlobalKey per message id — used for scroll-to-quoted-message
+  final Map<String, GlobalKey> _msgKeys = {};
+  String? _highlightedMsgId;
+  // Track last seen message count to guard auto-scroll
+  int _lastMsgCount = 0;
+  // Latest messages snapshot — updated directly (no setState) for scroll-to
+  List<MessageModel> _messages = [];
+  // Scroll-to-bottom FAB — ValueNotifier so scroll never triggers a setState
+  final _showFabNotifier = ValueNotifier<bool>(false);
+  final _unreadNotifier = ValueNotifier<int>(0);
 
   String get _myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  /// True if the scroll position is near the bottom (within 200 px).
+  bool get _isNearBottom {
+    if (!_scrollCtrl.hasClients) return true;
+    final pos = _scrollCtrl.position;
+    return pos.maxScrollExtent - pos.pixels < 200;
+  }
 
   @override
   void initState() {
     super.initState();
+    // Cache streams here — if created inside build() a new stream is made on
+    // every rebuild, causing StreamBuilder to briefly flash a loading spinner.
+    _messagesStream =
+        ChatService.instance.messagesStream(widget.conversationId);
+    _convStream =
+        ChatService.instance.conversationStream(widget.conversationId);
     ChatService.instance.markMessagesAsRead(widget.conversationId);
     _textCtrl.addListener(_onTextChanged);
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final shouldShow = !_isNearBottom;
+    if (shouldShow != _showFabNotifier.value) {
+      _showFabNotifier.value = shouldShow;
+      if (!shouldShow) _unreadNotifier.value = 0;
+    }
   }
 
   @override
@@ -56,7 +103,11 @@ class _ChatScreenState extends State<ChatScreen> {
     ChatService.instance.setTyping(widget.conversationId, false);
     _textCtrl.removeListener(_onTextChanged);
     _textCtrl.dispose();
+    _textFocusNode.dispose();
+    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _showFabNotifier.dispose();
+    _unreadNotifier.dispose();
     super.dispose();
   }
 
@@ -71,10 +122,62 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _setReply(_ReplyPreview? reply) => setState(() => _replyTo = reply);
+
+  /// Scroll to a message by ID and briefly highlight it.
+  /// Phase 1: if widget is already visible, use ensureVisible directly.
+  /// Phase 2: otherwise estimate position, scroll there, then refine.
+  Future<void> _scrollToMessage(String msgId) async {
+    // Phase 1 — already on screen?
+    final key = _msgKeys[msgId];
+    if (key?.currentContext != null) {
+      await Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+        alignment: 0.3,
+      );
+    } else {
+      // Phase 2 — estimate proportional offset and scroll there
+      final idx = _messages.indexWhere((m) => m.id == msgId);
+      if (idx < 0) return;
+      if (_scrollCtrl.hasClients) {
+        final total = _scrollCtrl.position.maxScrollExtent;
+        final frac = _messages.length > 1 ? idx / (_messages.length - 1) : 0.0;
+        await _scrollCtrl.animateTo(
+          frac * total,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOut,
+        );
+      }
+      // Wait for the list to build the newly visible items
+      await Future.delayed(const Duration(milliseconds: 80));
+      if (!mounted) return;
+      // Phase 2b — refine with ensureVisible now that item may be mounted
+      final key2 = _msgKeys[msgId];
+      if (key2?.currentContext != null) {
+        await Scrollable.ensureVisible(
+          key2!.currentContext!,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: 0.3,
+        );
+      }
+    }
+    if (!mounted) return;
+    setState(() => _highlightedMsgId = msgId);
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (mounted) setState(() => _highlightedMsgId = null);
+  }
+
   Future<void> _send() async {
     final text = _textCtrl.text.trim();
     if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
+    final reply = _replyTo;
+    setState(() {
+      _sending = true;
+      _replyTo = null;
+    });
     _textCtrl.clear();
     _typingTimer?.cancel();
     ChatService.instance.setTyping(widget.conversationId, false);
@@ -83,6 +186,9 @@ class _ChatScreenState extends State<ChatScreen> {
         convId: widget.conversationId,
         text: text,
         otherUid: widget.otherUserId,
+        replyToId: reply?.id,
+        replyToText: reply?.text,
+        replyToSenderName: reply?.senderName,
       );
       _scrollToBottom();
     } finally {
@@ -169,13 +275,20 @@ class _ChatScreenState extends State<ChatScreen> {
         fileName = pf.name;
         type = 'file';
       }
-    } catch (_) {
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open picker: $e')),
+        );
+      }
       return;
     }
 
     if (!mounted) return;
     setState(() => _uploading = true);
     try {
+      final reply = _replyTo;
+      if (mounted) setState(() => _replyTo = null);
       final mediaUrl = await _uploadToCloudinary(file, fileName);
       await ChatService.instance.sendMessage(
         convId: widget.conversationId,
@@ -184,6 +297,9 @@ class _ChatScreenState extends State<ChatScreen> {
         type: type,
         mediaUrl: mediaUrl,
         fileName: fileName,
+        replyToId: reply?.id,
+        replyToText: reply?.text,
+        replyToSenderName: reply?.senderName,
       );
       _scrollToBottom();
     } catch (e) {
@@ -258,8 +374,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           fontSize: 16, color: Colors.white)),
                   // ── Typing indicator ────────────────────────────────
                   StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: ChatService.instance
-                        .conversationStream(widget.conversationId),
+                    stream: _convStream,
                     builder: (ctx, snap) {
                       final typingUid =
                           snap.data?.data()?['typingUid'] as String? ?? '';
@@ -293,9 +408,9 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               // ── Message list ──────────────────────────────────────────────
               Expanded(
-                child: StreamBuilder<List<MessageModel>>(
-                  stream: ChatService.instance
-                      .messagesStream(widget.conversationId),
+                child: Stack(children: [
+                StreamBuilder<List<MessageModel>>(
+                  stream: _messagesStream,
                   builder: (context, snap) {
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
@@ -319,14 +434,26 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       );
                     }
-                    // Auto-scroll + mark as read on new messages
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _scrollToBottom();
-                      if (mounted) {
-                        ChatService.instance
-                            .markMessagesAsRead(widget.conversationId);
-                      }
-                    });
+                    // Update snapshot reference (no setState — avoids rebuild)
+                    _messages = messages;
+
+                    // Only auto-scroll + mark-read when NEW messages arrive,
+                    // not on every parent setState (send/reply/highlight etc.)
+                    if (messages.length > _lastMsgCount) {
+                      final newCount = messages.length - _lastMsgCount;
+                      _lastMsgCount = messages.length;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (_isNearBottom) {
+                          _scrollToBottom();
+                        } else {
+                          _unreadNotifier.value += newCount;
+                        }
+                        if (mounted) {
+                          ChatService.instance
+                              .markMessagesAsRead(widget.conversationId);
+                        }
+                      });
+                    }
                     return ListView.builder(
                       controller: _scrollCtrl,
                       padding: const EdgeInsets.symmetric(
@@ -339,21 +466,127 @@ class _ChatScreenState extends State<ChatScreen> {
                         final showDate = i == 0 ||
                             !_sameDay(
                                 messages[i - 1].timestamp, msg.timestamp);
+                        // Use ValueKey (not GlobalKey) as the list-item key
+                        // so Flutter reconciles by value without element moves.
+                        // A zero-height SizedBox carries the GlobalKey for ensureVisible.
+                        _msgKeys[msg.id] ??= GlobalKey();
                         return Column(
+                          key: ValueKey(msg.id),
                           children: [
                             if (showDate) _DateSeparator(msg.timestamp),
-                            _MessageBubble(
-                              msg: msg,
-                              isMe: isMe,
-                              otherUserId: widget.otherUserId,
-                            ),
+                            SizedBox(key: _msgKeys[msg.id], height: 0),
+                            _SwipeToReply(
+                                onReply: () {
+                                  final hiddenForMe = msg.deleted ||
+                                      msg.deletedFor.contains(_myUid);
+                                  if (hiddenForMe) return;
+                                  final senderName = isMe
+                                      ? 'You'
+                                      : widget.otherUserName;
+                                  final preview = msg.type == 'image'
+                                      ? '📷 Photo'
+                                      : msg.type == 'file'
+                                          ? '📎 ${msg.fileName ?? 'File'}'
+                                          : msg.text;
+                                  _setReply(_ReplyPreview(
+                                    id: msg.id,
+                                    senderName: senderName,
+                                    text: preview,
+                                  ));
+                                  _textFocusNode.requestFocus();
+                                },
+                                child: _MessageBubble(
+                                  msg: msg,
+                                  isMe: isMe,
+                                  myUid: _myUid,
+                                  otherUserId: widget.otherUserId,
+                                  convId: widget.conversationId,
+                                  highlighted: _highlightedMsgId == msg.id,
+                                  onTapReplyQuote: msg.replyToId != null
+                                      ? () => _scrollToMessage(msg.replyToId!)
+                                      : null,
+                                ),
+                              ),
                           ],
                         );
                       },
                     );
                   },
                 ),
-              ),
+                Positioned(
+                  right: 16,
+                  bottom: 12,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _showFabNotifier,
+                    builder: (_, show, __) {
+                      if (!show) return const SizedBox.shrink();
+                      return ValueListenableBuilder<int>(
+                        valueListenable: _unreadNotifier,
+                        builder: (_, unread, __) => _ScrollFab(
+                          unread: unread,
+                          onTap: () {
+                            _scrollToBottom();
+                            _unreadNotifier.value = 0;
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                ])),
+
+              // ── Reply preview bar ──────────────────────────────────────
+              if (_replyTo != null)
+                Container(
+                  color: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 3,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _replyTo!.senderName,
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _replyTo!.text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        color: AppColors.textSecondary,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _setReply(null),
+                      ),
+                    ],
+                  ),
+                ),
 
               // ── Input bar ─────────────────────────────────────────────────
               Container(
@@ -390,6 +623,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       Expanded(
                         child: TextField(
                           controller: _textCtrl,
+                          focusNode: _textFocusNode,
                           textCapitalization: TextCapitalization.sentences,
                           minLines: 1,
                           maxLines: 4,
@@ -461,6 +695,79 @@ class _ChatScreenState extends State<ChatScreen> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
+// ── Swipe-to-reply wrapper ────────────────────────────────────────────────
+class _SwipeToReply extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onReply;
+
+  const _SwipeToReply({required this.child, required this.onReply});
+
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply>
+    with SingleTickerProviderStateMixin {
+  double _dragOffset = 0;
+  static const _threshold = 60.0;
+  bool _triggered = false;
+
+  void _onHorizontalDragUpdate(DragUpdateDetails d) {
+    if (d.delta.dx < 0) return; // only right swipe
+    setState(() {
+      _dragOffset = (_dragOffset + d.delta.dx).clamp(0.0, _threshold + 12);
+    });
+    if (!_triggered && _dragOffset >= _threshold) {
+      _triggered = true;
+      widget.onReply();
+    }
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails _) {
+    setState(() {
+      _dragOffset = 0;
+      _triggered = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onHorizontalDragUpdate: _onHorizontalDragUpdate,
+      onHorizontalDragEnd: _onHorizontalDragEnd,
+      behavior: HitTestBehavior.translucent,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Reply icon that appears as you drag
+          if (_dragOffset > 0)
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Opacity(
+                    opacity: (_dragOffset / _threshold).clamp(0.0, 1.0),
+                    child: const CircleAvatar(
+                      radius: 14,
+                      backgroundColor: AppColors.primary,
+                      child: Icon(Icons.reply, color: Colors.white, size: 16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // Slide the bubble to the right
+          Transform.translate(
+            offset: Offset(_dragOffset, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Typing dots animation ────────────────────────────────────────────────
 class _TypingDots extends StatefulWidget {
   const _TypingDots();
@@ -515,94 +822,276 @@ class _TypingDotsState extends State<_TypingDots>
   }
 }
 
-// ── Message bubble ────────────────────────────────────────────────────────
-class _MessageBubble extends StatelessWidget {
-  final MessageModel msg;
+// ── Reply quote widget (shown inside a bubble) ───────────────────────────
+class _ReplyQuote extends StatelessWidget {
+  final String senderName;
+  final String text;
   final bool isMe;
-  final String otherUserId;
+  final VoidCallback? onTap;
 
-  const _MessageBubble({
-    required this.msg,
+  const _ReplyQuote({
+    required this.senderName,
+    required this.text,
     required this.isMe,
-    required this.otherUserId,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isImage = msg.type == 'image';
-    final isFile = msg.type == 'file';
+    final bgColor = isMe
+        ? Colors.white.withValues(alpha: 0.18)
+        : AppColors.primary.withValues(alpha: 0.08);
+    final barColor = isMe ? Colors.white70 : AppColors.primary;
+    final nameColor = isMe ? Colors.white : AppColors.primary;
+    final textColor =
+        isMe ? Colors.white.withValues(alpha: 0.8) : AppColors.textSecondary;
 
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+    return GestureDetector(
+      onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: isImage
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: barColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    bottomLeft: Radius.circular(8),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        senderName,
+                        style: TextStyle(
+                          color: nameColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: textColor, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Message bubble ────────────────────────────────────────────────────────
+class _MessageBubble extends StatelessWidget {
+  final MessageModel msg;
+  final bool isMe;
+  final String myUid;
+  final String otherUserId;
+  final String convId;
+  final bool highlighted;
+  final VoidCallback? onTapReplyQuote;
+
+  const _MessageBubble({
+    required this.msg,
+    required this.isMe,
+    required this.myUid,
+    required this.otherUserId,
+    required this.convId,
+    this.highlighted = false,
+    this.onTapReplyQuote,
+  });
+
+  void _onLongPress(BuildContext context) {
+    // Already deleted for this user — nothing to show
+    final hiddenForMe = msg.deleted || msg.deletedFor.contains(myUid);
+    if (hiddenForMe) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (isMe)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Delete for everyone',
+                    style: TextStyle(color: Colors.red)),
+                subtitle: const Text('Removed for all participants'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await ChatService.instance.deleteMessage(convId, msg.id);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_sweep_outlined,
+                  color: Colors.orange),
+              title: const Text('Delete for me',
+                  style: TextStyle(color: Colors.orange)),
+              subtitle: const Text('Hidden only on your device'),
+              onTap: () async {
+                Navigator.pop(context);
+                await ChatService.instance.deleteForMe(convId, msg.id);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hiddenForMe = msg.deleted || msg.deletedFor.contains(myUid);
+    final isImage = msg.type == 'image' && !hiddenForMe;
+    final isFile = msg.type == 'file' && !hiddenForMe;
+
+    return GestureDetector(
+      onLongPress: () => _onLongPress(context),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: isImage
             ? const EdgeInsets.all(4)
             : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.72,
         ),
         decoration: BoxDecoration(
-          color: isMe ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(isMe ? 18 : 4),
-            bottomRight: Radius.circular(isMe ? 4 : 18),
+          color: highlighted
+              ? Colors.amber.shade200
+              : hiddenForMe
+                  ? (isMe
+                      ? AppColors.primary.withValues(alpha: 0.35)
+                      : Colors.grey[200])
+                  : (isMe ? AppColors.primary : Colors.white),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(18),
+              topRight: const Radius.circular(18),
+              bottomLeft: Radius.circular(isMe ? 18 : 4),
+              bottomRight: Radius.circular(isMe ? 4 : 18),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isImage && msg.mediaUrl != null)
-              _ImageContent(url: msg.mediaUrl!, isMe: isMe)
-            else if (isFile && msg.mediaUrl != null)
-              _FileContent(
-                url: msg.mediaUrl!,
-                fileName: msg.fileName ?? 'File',
-                isMe: isMe,
-              )
-            else
-              Text(
-                msg.text,
-                style: TextStyle(
-                    color: isMe ? Colors.white : AppColors.textPrimary,
-                    fontSize: 14.5),
-              ),
-            const SizedBox(height: 3),
-            Padding(
-              padding: isImage
-                  ? const EdgeInsets.only(right: 6, bottom: 4)
-                  : EdgeInsets.zero,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    DateFormat('HH:mm').format(msg.timestamp),
-                    style: TextStyle(
-                      color: isMe
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : AppColors.textSecondary,
-                      fontSize: 10.5,
+          child: Column(
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Quoted message ──────────────────────────────────────
+              if (!hiddenForMe && msg.replyToId != null)
+                _ReplyQuote(
+                  senderName: msg.replyToSenderName ?? '',
+                  text: msg.replyToText ?? '',
+                  isMe: isMe,
+                  onTap: onTapReplyQuote,
+                ),
+              if (hiddenForMe)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.block,
+                        size: 13,
+                        color: isMe
+                            ? Colors.white60
+                            : AppColors.textSecondary),
+                    const SizedBox(width: 5),
+                    Text(
+                      msg.deleted ? 'Message deleted' : 'You deleted this message',
+                      style: TextStyle(
+                        color: isMe
+                            ? Colors.white60
+                            : AppColors.textSecondary,
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
-                  ),
-                  if (isMe) ...[
-                    const SizedBox(width: 3),
-                    _TickIcon(isRead: msg.readBy.contains(otherUserId)),
                   ],
-                ],
-              ),
-            ),
-          ],
+                )
+              else if (isImage && msg.mediaUrl != null)
+                _ImageContent(url: msg.mediaUrl!, isMe: isMe)
+              else if (isFile && msg.mediaUrl != null)
+                _FileContent(
+                  url: msg.mediaUrl!,
+                  fileName: msg.fileName ?? 'File',
+                  isMe: isMe,
+                )
+              else
+                _LinkText(text: msg.text, isMe: isMe),
+              if (!hiddenForMe) ...[
+                const SizedBox(height: 3),
+                Padding(
+                  padding: isImage
+                      ? const EdgeInsets.only(right: 6, bottom: 4)
+                      : EdgeInsets.zero,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        DateFormat('HH:mm').format(msg.timestamp),
+                        style: TextStyle(
+                          color: isMe
+                              ? Colors.white.withValues(alpha: 0.7)
+                              : AppColors.textSecondary,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                      if (isMe) ...[
+                        const SizedBox(width: 3),
+                        _TickIcon(isRead: msg.readBy.contains(otherUserId)),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -618,7 +1107,10 @@ class _ImageContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _openUrl(url),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+            builder: (_) => _ImageViewerScreen(url: url)),
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: Image.network(
@@ -709,6 +1201,150 @@ Future<void> _openUrl(String url) async {
   }
 }
 
+// ── Linkify text (makes URLs tappable) ────────────────────────────────────
+class _LinkText extends StatefulWidget {
+  final String text;
+  final bool isMe;
+  const _LinkText({required this.text, required this.isMe});
+
+  @override
+  State<_LinkText> createState() => _LinkTextState();
+}
+
+class _LinkTextState extends State<_LinkText> {
+  static final _urlRegex = RegExp(r'https?://\S+', caseSensitive: false);
+  final _recognizers = <TapGestureRecognizer>[];
+  late TextSpan _span;
+
+  @override
+  void initState() {
+    super.initState();
+    _buildSpan();
+  }
+
+  @override
+  void didUpdateWidget(_LinkText old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text || old.isMe != widget.isMe) {
+      for (final r in _recognizers) r.dispose();
+      _recognizers.clear();
+      _buildSpan();
+    }
+  }
+
+  void _buildSpan() {
+    final matches = _urlRegex.allMatches(widget.text).toList();
+    final baseColor = widget.isMe ? Colors.white : AppColors.textPrimary;
+    final linkColor =
+        widget.isMe ? Colors.lightBlueAccent : AppColors.primary;
+    const sz = 14.5;
+
+    if (matches.isEmpty) {
+      _span = TextSpan(
+        text: widget.text,
+        style: TextStyle(color: baseColor, fontSize: sz),
+      );
+      return;
+    }
+
+    final spans = <InlineSpan>[];
+    int cursor = 0;
+    for (final m in matches) {
+      if (m.start > cursor) {
+        spans.add(TextSpan(
+          text: widget.text.substring(cursor, m.start),
+          style: TextStyle(color: baseColor, fontSize: sz),
+        ));
+      }
+      final url = m.group(0)!;
+      final r = TapGestureRecognizer()..onTap = () => _openUrl(url);
+      _recognizers.add(r);
+      spans.add(TextSpan(
+        text: url,
+        style: TextStyle(
+          color: linkColor,
+          fontSize: sz,
+          decoration: TextDecoration.underline,
+          decorationColor: linkColor,
+        ),
+        recognizer: r,
+      ));
+      cursor = m.end;
+    }
+    if (cursor < widget.text.length) {
+      spans.add(TextSpan(
+        text: widget.text.substring(cursor),
+        style: TextStyle(color: baseColor, fontSize: sz),
+      ));
+    }
+    _span = TextSpan(children: spans);
+  }
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) r.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RichText(text: _span);
+}
+
+// ── Scroll-to-bottom FAB ────────────────────────────────────────────────────
+class _ScrollFab extends StatelessWidget {
+  final int unread;
+  final VoidCallback onTap;
+  const _ScrollFab({required this.unread, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: const [
+                BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 2))
+              ],
+            ),
+            child: const Icon(Icons.keyboard_arrow_down,
+                color: AppColors.primary, size: 26),
+          ),
+          if (unread > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$unread',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Date separator ─────────────────────────────────────────────────────────
 class _DateSeparator extends StatelessWidget {
   final DateTime date;
@@ -755,5 +1391,57 @@ class _TickIcon extends StatelessWidget {
     return isRead
         ? const Icon(Icons.done_all, size: 14, color: Colors.lightBlueAccent)
         : const Icon(Icons.done, size: 14, color: Colors.white60);
+  }
+}
+
+// ── Full-screen image viewer ─────────────────────────────────────────────
+class _ImageViewerScreen extends StatelessWidget {
+  final String url;
+  const _ImageViewerScreen({super.key, required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.open_in_new),
+            tooltip: 'Open in browser',
+            onPressed: () => _openUrl(url),
+          ),
+        ],
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 5.0,
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            loadingBuilder: (_, child, prog) {
+              if (prog == null) return child;
+              return Center(
+                child: CircularProgressIndicator(
+                  value: prog.expectedTotalBytes != null
+                      ? prog.cumulativeBytesLoaded /
+                          prog.expectedTotalBytes!
+                      : null,
+                  color: Colors.white,
+                ),
+              );
+            },
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.broken_image,
+              color: Colors.white54,
+              size: 64,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

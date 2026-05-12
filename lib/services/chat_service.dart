@@ -84,6 +84,9 @@ class ChatService {
     String type = 'text',
     String? mediaUrl,
     String? fileName,
+    String? replyToId,
+    String? replyToText,
+    String? replyToSenderName,
   }) async {
     final uid = _myUid;
     if (uid == null) return;
@@ -102,6 +105,9 @@ class ChatService {
       'type': type,
       if (mediaUrl != null) 'mediaUrl': mediaUrl,
       if (fileName != null) 'fileName': fileName,
+      if (replyToId != null) 'replyToId': replyToId,
+      if (replyToText != null) 'replyToText': replyToText,
+      if (replyToSenderName != null) 'replyToSenderName': replyToSenderName,
       'timestamp': FieldValue.serverTimestamp(),
       'readBy': [uid], // sender has already read their own message
     });
@@ -195,6 +201,32 @@ class ChatService {
         .collection('conversations')
         .doc(convId)
         .snapshots();
+  }
+
+  /// Soft-delete a message (sets deleted: true). Only the sender should call this.
+  Future<void> deleteMessage(String convId, String msgId) async {
+    final uid = _myUid;
+    if (uid == null) return;
+    await _db
+        .collection('conversations')
+        .doc(convId)
+        .collection('messages')
+        .doc(msgId)
+        .update({'deleted': true});
+  }
+
+  /// Hide a message only for the current user (adds uid to deletedFor array).
+  Future<void> deleteForMe(String convId, String msgId) async {
+    final uid = _myUid;
+    if (uid == null) return;
+    await _db
+        .collection('conversations')
+        .doc(convId)
+        .collection('messages')
+        .doc(msgId)
+        .update({
+      'deletedFor': FieldValue.arrayUnion([uid]),
+    });
   }
 
   /// Stream the total number of unread messages across all conversations

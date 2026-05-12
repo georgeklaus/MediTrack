@@ -10,6 +10,16 @@ class MessageModel {
   final String type;
   final String? mediaUrl;
   final String? fileName;
+  /// Soft-deleted for everyone (sender action).
+  final bool deleted;
+  /// UIDs of users who chose "delete for me" — message hidden only for them.
+  final List<String> deletedFor;
+  /// ID of the message being quoted (reply).
+  final String? replyToId;
+  /// Preview text of the quoted message.
+  final String? replyToText;
+  /// Display name of the quoted message's sender.
+  final String? replyToSenderName;
 
   MessageModel({
     required this.id,
@@ -20,6 +30,11 @@ class MessageModel {
     this.type = 'text',
     this.mediaUrl,
     this.fileName,
+    this.deleted = false,
+    this.deletedFor = const [],
+    this.replyToId,
+    this.replyToText,
+    this.replyToSenderName,
   });
 
   factory MessageModel.fromDoc(DocumentSnapshot doc) {
@@ -33,6 +48,11 @@ class MessageModel {
       type: map['type'] as String? ?? 'text',
       mediaUrl: map['mediaUrl'] as String?,
       fileName: map['fileName'] as String?,
+      deleted: map['deleted'] as bool? ?? false,
+      deletedFor: List<String>.from(map['deletedFor'] as List? ?? []),
+      replyToId: map['replyToId'] as String?,
+      replyToText: map['replyToText'] as String?,
+      replyToSenderName: map['replyToSenderName'] as String?,
     );
   }
 }
