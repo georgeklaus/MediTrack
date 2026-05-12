@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../services/auth_service.dart';
 import '../../services/appointment_service.dart';
+import '../../services/chat_service.dart';
 import '../../theme/app_theme.dart';
+import '../chat/chat_screen.dart';
 
 class DoctorProfileViewScreen extends StatefulWidget {
   final String providerId;
@@ -141,6 +143,33 @@ class _DoctorProfileViewScreenState extends State<DoctorProfileViewScreen> {
               label: const Text('Book Appointment'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
+                minimumSize: const Size(double.infinity, 50),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final convId = await ChatService.instance
+                    .getOrCreateConversation(
+                  otherUid: widget.providerId,
+                  otherName: 'Dr. $name',
+                );
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        conversationId: convId,
+                        otherUserId: widget.providerId,
+                        otherUserName: 'Dr. $name',
+                      ),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.chat_bubble_outline),
+              label: const Text('Message Doctor'),
+              style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),
             ),

@@ -3,6 +3,7 @@ import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/medications/medications_screen.dart';
 import '../screens/appointments/appointments_screen.dart';
 import '../screens/records/records_screen.dart';
+import '../screens/chat/chat_list_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import '../theme/app_theme.dart';
 
@@ -21,6 +22,7 @@ class _AppShellState extends State<AppShell> {
     MedicationsScreen(),
     AppointmentsScreen(),
     RecordsScreen(),
+    ChatListScreen(),
     ProfileScreen(),
   ];
 
@@ -45,7 +47,7 @@ class _AppShellState extends State<AppShell> {
         child: SafeArea(
           child: Padding(
             padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -78,11 +80,18 @@ class _AppShellState extends State<AppShell> {
                   onTap: () => setState(() => _currentIndex = 3),
                 ),
                 _NavItem(
+                  icon: Icons.chat_bubble_outline,
+                  activeIcon: Icons.chat_bubble,
+                  label: 'Chat',
+                  isActive: _currentIndex == 4,
+                  onTap: () => setState(() => _currentIndex = 4),
+                ),
+                _NavItem(
                   icon: Icons.person_outline,
                   activeIcon: Icons.person,
                   label: 'Profile',
-                  isActive: _currentIndex == 4,
-                  onTap: () => setState(() => _currentIndex = 4),
+                  isActive: _currentIndex == 5,
+                  onTap: () => setState(() => _currentIndex = 5),
                 ),
               ],
             ),
@@ -114,7 +123,7 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: isActive
             ? BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.1),

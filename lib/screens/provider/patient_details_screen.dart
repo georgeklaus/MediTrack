@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../services/provider_service.dart';
+import '../../services/chat_service.dart';
 import '../../theme/app_theme.dart';
 import 'add_medical_note_screen.dart';
 import 'provider_documents_screen.dart';
+import '../chat/chat_screen.dart';
 
 class PatientDetailsScreen extends StatelessWidget {
   final String patientId;
@@ -113,6 +115,32 @@ class PatientDetailsScreen extends StatelessWidget {
                                     patientName: name))),
                         icon: const Icon(Icons.upload_file_outlined),
                         label: const Text('Files'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final convId = await ChatService.instance
+                              .getOrCreateConversation(
+                            otherUid: patientId,
+                            otherName: name,
+                          );
+                          if (context.mounted) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  conversationId: convId,
+                                  otherUserId: patientId,
+                                  otherUserName: name,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        label: const Text('Message'),
                       ),
                     ),
                   ],

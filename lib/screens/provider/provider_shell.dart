@@ -6,6 +6,7 @@ import 'dashboard/provider_dashboard_screen.dart';
 import 'appointments/provider_appointments_screen.dart';
 import 'patient_list_screen.dart';
 import 'availability_screen.dart';
+import '../chat/chat_list_screen.dart';
 import 'provider_profile_screen.dart';
 
 class ProviderShell extends StatefulWidget {
@@ -23,6 +24,7 @@ class _ProviderShellState extends State<ProviderShell> {
     ProviderAppointmentsScreen(),
     PatientListScreen(),
     ProviderAvailabilityScreen(),
+    ChatListScreen(),
     ProviderProfileScreen(),
   ];
 
@@ -48,7 +50,7 @@ class _ProviderShellState extends State<ProviderShell> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -91,11 +93,18 @@ class _ProviderShellState extends State<ProviderShell> {
                   onTap: () => setState(() => _currentIndex = 3),
                 ),
                 _NavItem(
+                  icon: Icons.chat_bubble_outline,
+                  activeIcon: Icons.chat_bubble,
+                  label: 'Chat',
+                  isActive: _currentIndex == 4,
+                  onTap: () => setState(() => _currentIndex = 4),
+                ),
+                _NavItem(
                   icon: Icons.person_outline,
                   activeIcon: Icons.person,
                   label: 'Profile',
-                  isActive: _currentIndex == 4,
-                  onTap: () => setState(() => _currentIndex = 4),
+                  isActive: _currentIndex == 5,
+                  onTap: () => setState(() => _currentIndex = 5),
                 ),
               ],
             ),
