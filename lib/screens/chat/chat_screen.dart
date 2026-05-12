@@ -51,6 +51,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await ChatService.instance.sendMessage(
         convId: widget.conversationId,
         text: text,
+        otherUid: widget.otherUserId,
       );
       _scrollToBottom();
     } finally {

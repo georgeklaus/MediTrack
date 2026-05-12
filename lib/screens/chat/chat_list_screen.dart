@@ -168,6 +168,8 @@ class _ContactTile extends StatelessWidget {
         : DateTime.now().difference(time).inDays == 0
             ? DateFormat('HH:mm').format(time)
             : DateFormat('MMM d').format(time);
+    final unread = conversation?.unreadCounts[myUid] ?? 0;
+    final hasUnread = unread > 0;
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
@@ -181,25 +183,58 @@ class _ContactTile extends StatelessWidget {
         ),
       ),
       title: Text(contact.name,
-          style:
-              const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          style: TextStyle(
+              fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w600,
+              fontSize: 15)),
       subtitle: Text(
         lastMsg.isEmpty ? 'Tap to start chatting' : lastMsg,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: lastMsg.isEmpty
-              ? AppColors.primary.withValues(alpha: 0.6)
-              : AppColors.textSecondary,
+          color: hasUnread
+              ? AppColors.primary
+              : lastMsg.isEmpty
+                  ? AppColors.primary.withValues(alpha: 0.6)
+                  : AppColors.textSecondary,
           fontSize: 13,
+          fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
           fontStyle: lastMsg.isEmpty ? FontStyle.italic : FontStyle.normal,
         ),
       ),
-      trailing: timeStr.isNotEmpty
-          ? Text(timeStr,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12))
-          : const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      trailing: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (timeStr.isNotEmpty)
+            Text(timeStr,
+                style: TextStyle(
+                    color: hasUnread
+                        ? AppColors.primary
+                        : AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight:
+                        hasUnread ? FontWeight.w600 : FontWeight.normal)),
+          if (hasUnread) ...[
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                unread > 99 ? '99+' : '$unread',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+          if (!hasUnread && timeStr.isEmpty)
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+        ],
+      ),
       onTap: () async {
         final convId = await ChatService.instance.getOrCreateConversation(
           otherUid: contact.uid,

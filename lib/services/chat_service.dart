@@ -75,9 +75,11 @@ class ChatService {
   }
 
   /// Send a message and update conversation metadata atomically.
+  /// [otherUid] is used to increment that user's unread counter.
   Future<void> sendMessage({
     required String convId,
     required String text,
+    required String otherUid,
   }) async {
     final uid = _myUid;
     if (uid == null || text.trim().isEmpty) return;
@@ -100,13 +102,17 @@ class ChatService {
       'lastMessage': trimmed,
       'lastMessageTime': FieldValue.serverTimestamp(),
       'lastSenderId': uid,
+      // Increment the receiver's unread counter
+      'unreadCounts.$otherUid': FieldValue.increment(1),
     });
 
     await batch.commit();
   }
 
-  /// Mark all messages sent by the other user as read by [myUid].
-  Future<void> markMessagesAsRead(String convId) async {    final uid = _myUid;
+  /// Mark all messages sent by the other user as read by [myUid]
+  /// and reset the unread counter on the conversation document.
+  Future<void> markMessagesAsRead(String convId) async {
+    final uid = _myUid;
     if (uid == null) return;
     final snap = await _db
         .collection('conversations')
@@ -127,10 +133,15 @@ class ChatService {
       }
     }
     if (hasUpdates) await batch.commit();
+    // Always reset our unread counter on the conversation doc so the
+    // badge clears immediately (this write triggers the reactive stream).
+    await _db.collection('conversations').doc(convId).update({
+      'unreadCounts.$uid': 0,
+    });
   }
 
   /// Stream the total number of unread messages across all conversations
-  /// for the current user (messages not sent by them and not in their readBy).
+  /// by reading the reactive `unreadCounts` field on each conversation doc.
   Stream<int> unreadChatCount() {
     final uid = _myUid;
     if (uid == null) return Stream.value(0);
@@ -138,19 +149,12 @@ class ChatService {
         .collection('conversations')
         .where('participants', arrayContains: uid)
         .snapshots()
-        .asyncMap((convSnap) async {
+        .map((snap) {
           int total = 0;
-          for (final convDoc in convSnap.docs) {
-            final msgSnap = await convDoc.reference
-                .collection('messages')
-                .get();
-            for (final msgDoc in msgSnap.docs) {
-              final data = msgDoc.data();
-              if (data['senderId'] == uid) continue;
-              final readBy =
-                  List<String>.from(data['readBy'] as List? ?? []);
-              if (!readBy.contains(uid)) total++;
-            }
+          for (final doc in snap.docs) {
+            final counts =
+                doc.data()['unreadCounts'] as Map<dynamic, dynamic>? ?? {};
+            total += (counts[uid] as num?)?.toInt() ?? 0;
           }
           return total;
         });

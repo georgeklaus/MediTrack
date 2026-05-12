@@ -7,6 +7,8 @@ class ConversationModel {
   final String lastMessage;
   final DateTime? lastMessageTime;
   final String? lastSenderId;
+  /// Per-user unread count. Key = uid, value = number of unread messages.
+  final Map<String, int> unreadCounts;
 
   ConversationModel({
     required this.id,
@@ -15,6 +17,7 @@ class ConversationModel {
     this.lastMessage = '',
     this.lastMessageTime,
     this.lastSenderId,
+    this.unreadCounts = const {},
   });
 
   factory ConversationModel.fromDoc(DocumentSnapshot doc) {
@@ -24,6 +27,10 @@ class ConversationModel {
     final participantNames = rawNames.map(
       (k, v) => MapEntry(k.toString(), v.toString()),
     );
+    final rawCounts = map['unreadCounts'] as Map<dynamic, dynamic>? ?? {};
+    final unreadCounts = rawCounts.map(
+      (k, v) => MapEntry(k.toString(), (v as num?)?.toInt() ?? 0),
+    );
     return ConversationModel(
       id: doc.id,
       participants: participants,
@@ -31,6 +38,7 @@ class ConversationModel {
       lastMessage: map['lastMessage'] as String? ?? '',
       lastMessageTime: (map['lastMessageTime'] as Timestamp?)?.toDate(),
       lastSenderId: map['lastSenderId'] as String?,
+      unreadCounts: unreadCounts,
     );
   }
 
