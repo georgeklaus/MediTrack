@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
@@ -50,6 +52,46 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
+
+    // Initialise Firebase Cloud Messaging
+    await _initFCM();
+  }
+
+  // ---------------------------------------------------------------------------
+  // FCM setup
+  // ---------------------------------------------------------------------------
+  Future<void> _initFCM() async {
+    final messaging = FirebaseMessaging.instance;
+
+    // Request permission (required on iOS; harmless on Android)
+    await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Store initial token
+    final token = await messaging.getToken();
+    if (token != null) await _saveFcmToken(token);
+
+    // Refresh token whenever it changes
+    messaging.onTokenRefresh.listen(_saveFcmToken);
+
+    // Foreground FCM messages → show a local notification
+    FirebaseMessaging.onMessage.listen((message) {
+      final n = message.notification;
+      if (n != null) {
+        _show(n.body ?? n.title ?? 'New message');
+      }
+    });
+  }
+
+  Future<void> _saveFcmToken(String token) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'fcmToken': token,
+    });
   }
 
   /// Start watching Firestore notifications for [uid].

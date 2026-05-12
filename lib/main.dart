@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -16,9 +17,18 @@ import 'screens/role_selection_screen.dart';
 import 'widgets/app_shell.dart';
 import 'screens/provider/provider_shell.dart';
 
+/// Top-level handler for FCM messages received when the app is terminated
+/// or in the background. Must be a top-level (non-anonymous) function.
+@pragma('vm:entry-point')
+Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  // FCM automatically shows the notification; nothing extra needed here.
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
   await NotificationService().init();
   runApp(const MediTrackApp());
 }

@@ -76,14 +76,19 @@ class ChatService {
 
   /// Send a message and update conversation metadata atomically.
   /// [otherUid] is used to increment that user's unread counter.
+  /// Optional [type], [mediaUrl], [fileName] support image/file messages.
   Future<void> sendMessage({
     required String convId,
     required String text,
     required String otherUid,
+    String type = 'text',
+    String? mediaUrl,
+    String? fileName,
   }) async {
     final uid = _myUid;
-    if (uid == null || text.trim().isEmpty) return;
-    final trimmed = text.trim();
+    if (uid == null) return;
+    if (type == 'text' && text.trim().isEmpty) return;
+    final trimmed = type == 'text' ? text.trim() : text;
     final batch = _db.batch();
 
     final msgRef = _db
@@ -94,19 +99,48 @@ class ChatService {
     batch.set(msgRef, {
       'senderId': uid,
       'text': trimmed,
+      'type': type,
+      if (mediaUrl != null) 'mediaUrl': mediaUrl,
+      if (fileName != null) 'fileName': fileName,
       'timestamp': FieldValue.serverTimestamp(),
       'readBy': [uid], // sender has already read their own message
     });
 
+    // Preview text shown in chat list
+    final preview = type == 'image'
+        ? '📷 Photo'
+        : type == 'file'
+            ? '📎 ${fileName ?? 'File'}'
+            : trimmed;
+
     batch.update(_db.collection('conversations').doc(convId), {
-      'lastMessage': trimmed,
+      'lastMessage': preview,
       'lastMessageTime': FieldValue.serverTimestamp(),
       'lastSenderId': uid,
       // Increment the receiver's unread counter
       'unreadCounts.$otherUid': FieldValue.increment(1),
+      // Clear typing indicator for this sender
+      'typingUid': '',
     });
 
     await batch.commit();
+
+    // Write to notifications collection so the existing NotificationService
+    // fires an in-app local notification for the recipient.
+    final myName = _auth.currentUser?.displayName ?? 'Someone';
+    await _db.collection('notifications').add({
+      'recipientUid': otherUid,
+      'message': type == 'image'
+          ? '$myName sent a photo'
+          : type == 'file'
+              ? '$myName sent a file'
+              : '$myName: $trimmed',
+      'type': 'message',
+      'convId': convId,
+      'senderUid': uid,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Mark all messages sent by the other user as read by [myUid]
@@ -138,6 +172,29 @@ class ChatService {
     await _db.collection('conversations').doc(convId).update({
       'unreadCounts.$uid': 0,
     });
+  }
+
+  /// Update the typing indicator for the current user in a conversation.
+  /// Pass [isTyping] = true when the user starts typing, false to clear.
+  Future<void> setTyping(String convId, bool isTyping) async {
+    final uid = _myUid;
+    if (uid == null) return;
+    try {
+      await _db.collection('conversations').doc(convId).update({
+        'typingUid': isTyping ? uid : '',
+      });
+    } catch (_) {
+      // Ignore if doc doesn't exist yet
+    }
+  }
+
+  /// Stream a single conversation document (used for typing indicator).
+  Stream<DocumentSnapshot<Map<String, dynamic>>> conversationStream(
+      String convId) {
+    return _db
+        .collection('conversations')
+        .doc(convId)
+        .snapshots();
   }
 
   /// Stream the total number of unread messages across all conversations
