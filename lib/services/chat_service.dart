@@ -106,8 +106,7 @@ class ChatService {
   }
 
   /// Mark all messages sent by the other user as read by [myUid].
-  Future<void> markMessagesAsRead(String convId) async {
-    final uid = _myUid;
+  Future<void> markMessagesAsRead(String convId) async {    final uid = _myUid;
     if (uid == null) return;
     final snap = await _db
         .collection('conversations')
@@ -128,5 +127,32 @@ class ChatService {
       }
     }
     if (hasUpdates) await batch.commit();
+  }
+
+  /// Stream the total number of unread messages across all conversations
+  /// for the current user (messages not sent by them and not in their readBy).
+  Stream<int> unreadChatCount() {
+    final uid = _myUid;
+    if (uid == null) return Stream.value(0);
+    return _db
+        .collection('conversations')
+        .where('participants', arrayContains: uid)
+        .snapshots()
+        .asyncMap((convSnap) async {
+          int total = 0;
+          for (final convDoc in convSnap.docs) {
+            final msgSnap = await convDoc.reference
+                .collection('messages')
+                .get();
+            for (final msgDoc in msgSnap.docs) {
+              final data = msgDoc.data();
+              if (data['senderId'] == uid) continue;
+              final readBy =
+                  List<String>.from(data['readBy'] as List? ?? []);
+              if (!readBy.contains(uid)) total++;
+            }
+          }
+          return total;
+        });
   }
 }

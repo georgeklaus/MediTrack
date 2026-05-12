@@ -5,6 +5,7 @@ import '../screens/appointments/appointments_screen.dart';
 import '../screens/records/records_screen.dart';
 import '../screens/chat/chat_list_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 
 class AppShell extends StatefulWidget {
@@ -79,12 +80,19 @@ class _AppShellState extends State<AppShell> {
                   isActive: _currentIndex == 3,
                   onTap: () => setState(() => _currentIndex = 3),
                 ),
-                _NavItem(
-                  icon: Icons.chat_bubble_outline,
-                  activeIcon: Icons.chat_bubble,
-                  label: 'Chat',
-                  isActive: _currentIndex == 4,
-                  onTap: () => setState(() => _currentIndex = 4),
+                StreamBuilder<int>(
+                  stream: ChatService.instance.unreadChatCount(),
+                  builder: (context, snap) {
+                    final count = snap.data ?? 0;
+                    return _NavItem(
+                      icon: Icons.chat_bubble_outline,
+                      activeIcon: Icons.chat_bubble,
+                      label: 'Chat',
+                      isActive: _currentIndex == 4,
+                      badge: count > 0 ? count : null,
+                      onTap: () => setState(() => _currentIndex = 4),
+                    );
+                  },
                 ),
                 _NavItem(
                   icon: Icons.person_outline,
@@ -107,6 +115,7 @@ class _NavItem extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final bool isActive;
+  final int? badge;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -115,6 +124,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.isActive,
     required this.onTap,
+    this.badge,
   });
 
   @override
@@ -133,10 +143,39 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              isActive ? activeIcon : icon,
-              color: isActive ? AppColors.primary : AppColors.textSecondary,
-              size: 22,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isActive ? activeIcon : icon,
+                  color: isActive
+                      ? AppColors.primary
+                      : AppColors.textSecondary,
+                  size: 22,
+                ),
+                if (badge != null)
+                  Positioned(
+                    top: -4,
+                    right: -6,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                          minWidth: 16, minHeight: 16),
+                      child: Text(
+                        badge! > 99 ? '99+' : '$badge',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 2),
             Text(

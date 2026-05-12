@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/appointment_service.dart';
+import '../../services/chat_service.dart';
 import '../../theme/app_theme.dart';
 import 'dashboard/provider_dashboard_screen.dart';
 import 'appointments/provider_appointments_screen.dart';
@@ -92,12 +93,19 @@ class _ProviderShellState extends State<ProviderShell> {
                   isActive: _currentIndex == 3,
                   onTap: () => setState(() => _currentIndex = 3),
                 ),
-                _NavItem(
-                  icon: Icons.chat_bubble_outline,
-                  activeIcon: Icons.chat_bubble,
-                  label: 'Chat',
-                  isActive: _currentIndex == 4,
-                  onTap: () => setState(() => _currentIndex = 4),
+                StreamBuilder<int>(
+                  stream: ChatService.instance.unreadChatCount(),
+                  builder: (context, snap) {
+                    final count = snap.data ?? 0;
+                    return _NavItem(
+                      icon: Icons.chat_bubble_outline,
+                      activeIcon: Icons.chat_bubble,
+                      label: 'Chat',
+                      isActive: _currentIndex == 4,
+                      badge: count > 0 ? count : null,
+                      onTap: () => setState(() => _currentIndex = 4),
+                    );
+                  },
                 ),
                 _NavItem(
                   icon: Icons.person_outline,
